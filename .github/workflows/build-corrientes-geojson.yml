@@ -1,0 +1,53 @@
+name: Build Corrientes GeoJSON bundle
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download official Georef boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          curl --fail --location --retry 5 --retry-delay 2 \
+            'https://apis.datos.gob.ar/georef/api/v2.0/departamentos?provincia=18&formato=geojson&max=1000' \
+            --output data/departamentos-corrientes.geojson
+          curl --fail --location --retry 5 --retry-delay 2 \
+            'https://apis.datos.gob.ar/georef/api/v2.0/municipios?provincia=18&formato=geojson&max=1000' \
+            --output data/municipios-corrientes.geojson
+      - name: Validate boundaries
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          expected = {
+              'departamentos-corrientes.geojson': 25,
+              'municipios-corrientes.geojson': 1,
+          }
+          for filename, minimum in expected.items():
+              path = Path('data') / filename
+              payload = json.loads(path.read_text(encoding='utf-8'))
+              features = payload.get('features') or []
+              if payload.get('type') != 'FeatureCollection':
+                  raise SystemExit(f'{filename}: not a FeatureCollection')
+              if len(features) < minimum:
+                  raise SystemExit(f'{filename}: only {len(features)} features')
+              for feature in features:
+                  geometry = feature.get('geometry') or {}
+                  if geometry.get('type') not in {'Polygon', 'MultiPolygon'}:
+                      raise SystemExit(f'{filename}: invalid geometry {geometry.get("type")}')
+              print(filename, len(features))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corrientes-official-geojson
+          path: data/*.geojson
+          if-no-files-found: error
+          retention-days: 1

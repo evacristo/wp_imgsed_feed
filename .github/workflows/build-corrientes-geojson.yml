@@ -11,40 +11,67 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Download official Georef boundaries
+      - name: Download official Georef polygon datasets
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p data
+          mkdir -p data /tmp/georef
           curl --fail --location --retry 5 --retry-delay 2 \
-            'https://apis.datos.gob.ar/georef/api/v2.0/departamentos?provincia=18&formato=geojson&max=1000' \
-            --output data/departamentos-corrientes.geojson
+            'https://apis.datos.gob.ar/georef/api/v2.0/departamentos.geojson' \
+            --output /tmp/georef/departamentos.geojson
           curl --fail --location --retry 5 --retry-delay 2 \
-            'https://apis.datos.gob.ar/georef/api/v2.0/municipios?provincia=18&formato=geojson&max=1000' \
-            --output data/municipios-corrientes.geojson
-      - name: Validate boundaries
+            'https://apis.datos.gob.ar/georef/api/v2.0/municipios.geojson' \
+            --output /tmp/georef/municipios.geojson
+      - name: Filter Corrientes and validate boundaries
         shell: python
         run: |
           import json
+          import unicodedata
           from pathlib import Path
 
-          expected = {
-              'departamentos-corrientes.geojson': 25,
-              'municipios-corrientes.geojson': 1,
-          }
-          for filename, minimum in expected.items():
-              path = Path('data') / filename
-              payload = json.loads(path.read_text(encoding='utf-8'))
-              features = payload.get('features') or []
-              if payload.get('type') != 'FeatureCollection':
-                  raise SystemExit(f'{filename}: not a FeatureCollection')
+          def normalized(value):
+              text = unicodedata.normalize('NFD', str(value or ''))
+              return ''.join(ch for ch in text if unicodedata.category(ch) != 'Mn').lower()
+
+          def belongs_to_corrientes(feature):
+              props = feature.get('properties') or {}
+              province = props.get('provincia') or props.get('province')
+              if isinstance(province, dict):
+                  if str(province.get('id', '')).zfill(2) == '18':
+                      return True
+                  if normalized(province.get('nombre')) == 'corrientes':
+                      return True
+              if str(props.get('provincia_id', '')).zfill(2) == '18':
+                  return True
+              if normalized(props.get('provincia_nombre')) == 'corrientes':
+                  return True
+              entity_id = str(props.get('id') or feature.get('id') or '')
+              return entity_id.startswith('18')
+
+          specs = [
+              ('departamentos', 25),
+              ('municipios', 70),
+          ]
+          for stem, minimum in specs:
+              source = Path('/tmp/georef') / f'{stem}.geojson'
+              payload = json.loads(source.read_text(encoding='utf-8'))
+              features = [feature for feature in (payload.get('features') or []) if belongs_to_corrientes(feature)]
               if len(features) < minimum:
-                  raise SystemExit(f'{filename}: only {len(features)} features')
+                  keys = sorted((payload.get('features') or [{}])[0].get('properties', {}).keys())
+                  raise SystemExit(f'{stem}: only {len(features)} Corrientes features; property keys={keys}')
               for feature in features:
                   geometry = feature.get('geometry') or {}
                   if geometry.get('type') not in {'Polygon', 'MultiPolygon'}:
-                      raise SystemExit(f'{filename}: invalid geometry {geometry.get("type")}')
-              print(filename, len(features))
+                      raise SystemExit(f'{stem}: invalid geometry {geometry.get("type")}')
+              output = {
+                  'type': 'FeatureCollection',
+                  'name': f'{stem}-corrientes',
+                  'source': 'API Georef Argentina / IGN',
+                  'features': features,
+              }
+              destination = Path('data') / f'{stem}-corrientes.geojson'
+              destination.write_text(json.dumps(output, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+              print(destination, len(features), destination.stat().st_size)
       - uses: actions/upload-artifact@v4
         with:
           name: corrientes-official-geojson

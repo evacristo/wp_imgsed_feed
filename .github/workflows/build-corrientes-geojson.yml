@@ -20,7 +20,7 @@ jobs:
             'https://apis.datos.gob.ar/georef/api/v2.0/departamentos.geojson' \
             --output /tmp/georef/departamentos.geojson
           curl --fail --location --retry 5 --retry-delay 2 \
-            'https://apis.datos.gob.ar/georef/api/v2.0/municipios.geojson' \
+            'https://apis.datos.gob.ar/georef/api/municipios.geojson' \
             --output /tmp/georef/municipios.geojson
       - name: Filter Corrientes and validate boundaries
         shell: python

@@ -22,7 +22,7 @@ jobs:
           curl --fail --location --retry 5 --retry-delay 2 \
             'https://ide.transporte.gob.ar/geoserver/idera/ows?maxFeatures=10000&outputFormat=application%2Fjson&request=GetFeature&service=WFS&typeName=idera%3ARutas_Nacionales&version=1.0.0' \
             --output raw/rutas-nacionales.geojson
-          curl --fail --location --retry 5 --retry-delay 2 \
+          curl --insecure --fail --location --retry 5 --retry-delay 2 \
             'https://wms.ign.gob.ar/geoserver/transporte/ows?maxFeatures=100000&outputFormat=application%2Fjson&request=GetFeature&service=WFS&typeName=transporte%3Avial_provincial&version=1.0.0' \
             --output raw/rutas-provinciales.geojson
       - name: Install geometry tools
